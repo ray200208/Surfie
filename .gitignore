@@ -1,0 +1,10 @@
+node_modules
+dist
+.vercel
+.env
+.env.local
+*.log
+.DS_Store
+Docs/PandaPilot_Prototype_Prompt.md
+
+.vercel
