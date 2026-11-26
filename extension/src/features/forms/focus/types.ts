@@ -67,10 +67,14 @@ export interface FocusPlan {
 export interface ReviewItem {
   fieldId: string;
   label: string;
+  inputType: FocusField['inputType'];
+  options?: { value: string; label: string }[];
   value: string;
+  displayValue: string;
   source: FocusFieldSource | null;
   required: boolean;
   missing: boolean;
+  sensitive: boolean;
 }
 
 /** Connects a Focus field to the existing safe-fill message contract. */

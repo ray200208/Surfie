@@ -160,19 +160,48 @@ export function buildPlan(form: FocusForm, modeOverride?: FocusMode): FocusPlan 
   };
 }
 
+const SENSITIVE_FIELD_PATTERN =
+  /password|passcode|\botp\b|one[\s_-]*time|card[\s_-]*number|\bcvv\b|\bcvc\b/i;
+
+export function isSensitiveField(field: FocusField): boolean {
+  return SENSITIVE_FIELD_PATTERN.test(`${field.inputType} ${field.label} ${field.id}`);
+}
+
 export function buildReviewItems(form: FocusForm): ReviewItem[] {
-  return form.fields.map((field: FocusField) => ({
-    fieldId: field.id,
-    label: field.label,
-    value: field.value,
-    source: field.source,
-    required: field.required,
-    missing: field.required && isEmpty(field.value),
-  }));
+  return form.fields.map((field: FocusField) => {
+    const sensitive = isSensitiveField(field);
+    const matchingOption =
+      field.inputType === 'select'
+        ? field.options?.find((option) => option.value === field.value)
+        : undefined;
+
+    return {
+      fieldId: field.id,
+      label: field.label,
+      inputType: field.inputType,
+      ...(field.options ? { options: field.options.map((option) => ({ ...option })) } : {}),
+      value: sensitive ? '' : field.value,
+      displayValue: sensitive
+        ? 'Hidden (you type this yourself)'
+        : matchingOption?.label ?? field.value,
+      source: field.source,
+      required: field.required,
+      missing: !sensitive && field.required && isEmpty(field.value),
+      sensitive,
+    };
+  });
 }
 
 export function canSubmit(items: ReviewItem[]): boolean {
-  return items.every((item) => !item.missing);
+  return items.every((item) => item.sensitive || !item.missing);
+}
+
+export function getConfirmableValues(form: FocusForm): Record<string, string> {
+  return Object.fromEntries(
+    form.fields
+      .filter((field) => !isSensitiveField(field) && !isEmpty(field.value))
+      .map((field) => [field.id, field.value])
+  );
 }
 
 export function applyFieldValue(
