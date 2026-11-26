@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { applyFieldValue, buildPlan } from './plan';
+import {
+  applyFieldValue,
+  buildPlan,
+  buildReviewItems,
+  canSubmit,
+  getConfirmableValues,
+} from './plan';
 import type { FocusForm, FocusMode, FocusStep } from './types';
 import FocusField from './FocusField';
+import ReviewCard from './ReviewCard';
 
 export interface FocusPanelProps {
   form: FocusForm;
   onFormChange?: (form: FocusForm) => void;
   onActiveFieldsChange?: (fieldIds: string[]) => void;
   onExit?: () => void;
-  onConfirm?: (form: FocusForm) => void;
+  onConfirm?: (values: Record<string, string>) => void;
 }
 
 function isBlank(value: string): boolean {
@@ -26,6 +33,7 @@ export default function FocusPanel({
   const [plan, setPlan] = useState(() => buildPlan(form));
   const [mode, setMode] = useState<FocusMode>(() => buildPlan(form).mode);
   const [stepIndex, setStepIndex] = useState(0);
+  const [temporaryEditFieldId, setTemporaryEditFieldId] = useState<string | null>(null);
   const [showingOriginal, setShowingOriginal] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const propFormRef = useRef(form);
@@ -54,11 +62,18 @@ export default function FocusPanel({
     .map((fieldId) => fieldsById.get(fieldId))
     .filter((field): field is NonNullable<typeof field> => field !== undefined);
   const stepKey = `${stepIndex}:${currentStep.kind}:${currentStep.title}:${currentStep.fieldIds.join(',')}`;
+  const temporaryEditField = temporaryEditFieldId
+    ? fieldsById.get(temporaryEditFieldId)
+    : undefined;
+  const isTemporaryEditing = temporaryEditField !== undefined;
+  const activeFieldIds = isTemporaryEditing ? [temporaryEditField.id] : currentStep.fieldIds;
+  const visibleStepKey = `${stepKey}:${temporaryEditFieldId ?? ''}`;
   const autoFilledCount = plan.autoFilledFieldIds.length;
   const isLastStep = stepIndex >= plan.steps.length - 1;
-  const requiredFieldsComplete = stepFields
-    .filter((field) => field.required)
-    .every((field) => !isBlank(field.value));
+  const requiredFieldsComplete =
+    currentStep.kind === 'review'
+      ? canSubmit(buildReviewItems(localForm))
+      : stepFields.filter((field) => field.required).every((field) => !isBlank(field.value));
   const canSkip =
     currentStep.kind !== 'review' &&
     stepFields.length > 0 &&
@@ -75,11 +90,28 @@ export default function FocusPanel({
   const advance = useCallback(() => {
     if (!requiredFieldsComplete) return;
     if (isLastStep) {
-      onConfirm?.(localForm);
+      onConfirm?.(getConfirmableValues(localForm));
       return;
     }
     handleStepChange(stepIndex + 1);
   }, [handleStepChange, isLastStep, localForm, onConfirm, requiredFieldsComplete, stepIndex]);
+
+  const confirm = () => {
+    if (!canSubmit(buildReviewItems(localForm))) return;
+    onConfirm?.(getConfirmableValues(localForm));
+  };
+
+  const editField = (fieldId: string) => {
+    const containingStep = plan.steps.findIndex(
+      (step) => step.kind !== 'review' && step.fieldIds.includes(fieldId)
+    );
+    if (containingStep >= 0) {
+      setTemporaryEditFieldId(null);
+      handleStepChange(containingStep);
+      return;
+    }
+    setTemporaryEditFieldId(fieldId);
+  };
 
   const collapseToOriginal = useCallback(() => {
     setShowingOriginal(true);
@@ -89,8 +121,8 @@ export default function FocusPanel({
   useEffect(() => {
     if (showingOriginal) return;
     headingRef.current?.focus();
-    onActiveFieldsChange?.(currentStep.fieldIds);
-  }, [showingOriginal, stepKey, onActiveFieldsChange]);
+    onActiveFieldsChange?.(activeFieldIds);
+  }, [showingOriginal, visibleStepKey, onActiveFieldsChange]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -207,15 +239,35 @@ export default function FocusPanel({
         </div>
       </header>
 
-      <div className="rounded-xl border border-[#E2E8F0] bg-white p-4 shadow-xs">
-        <h3 ref={headingRef} tabIndex={-1} className="text-sm font-bold text-[#1E1B4B] focus:outline-none">
-          {currentStep.kind === 'review' ? 'Review step' : currentStep.title}
-        </h3>
-        {currentStep.kind === 'review' ? (
-          <div className="mt-3 rounded-lg border border-[#E2E8F0] bg-[#F8F9FC] p-3 text-xs text-[#475569]">
-            Review step
-          </div>
-        ) : (
+      {currentStep.kind === 'review' && !isTemporaryEditing ? (
+        <ReviewCard
+          items={buildReviewItems(localForm)}
+          onEdit={editField}
+          onBack={() => handleStepChange(stepIndex - 1)}
+          onConfirm={confirm}
+        />
+      ) : (
+        <div className="rounded-xl border border-[#E2E8F0] bg-white p-4 shadow-xs">
+          <h3 ref={headingRef} tabIndex={-1} className="text-sm font-bold text-[#1E1B4B] focus:outline-none">
+            {isTemporaryEditing ? `Edit ${temporaryEditField.label}` : currentStep.title}
+          </h3>
+          {isTemporaryEditing ? (
+            <div className="mt-3 space-y-3">
+              <FocusField
+                field={temporaryEditField}
+                onChange={(value) => updateField(temporaryEditField.id, value)}
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setTemporaryEditFieldId(null)}
+                  className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-xs font-semibold text-[#475569] transition hover:bg-[#F8F9FC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#331E6D]/40"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          ) : (
           <div className="mt-3 space-y-3">
             {stepFields.map((field, index) => (
               <FocusField
@@ -226,10 +278,11 @@ export default function FocusPanel({
               />
             ))}
           </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
-      <nav className="flex items-center justify-between gap-2" aria-label="Focus Mode navigation">
+      {currentStep.kind !== 'review' && !isTemporaryEditing && <nav className="flex items-center justify-between gap-2" aria-label="Focus Mode navigation">
         <button
           type="button"
           onClick={() => handleStepChange(stepIndex - 1)}
@@ -256,7 +309,7 @@ export default function FocusPanel({
             Next
           </button>
         </div>
-      </nav>
+      </nav>}
     </section>
   );
 }
