@@ -6,7 +6,6 @@ import { scanActivePageForm } from './liveForm';
 import { clearSpotlight } from './spotlightClient';
 import { useSpotlight } from './useSpotlight';
 import FocusPanel from './FocusPanel';
-import { mockLongForm, mockShortForm } from './mockForms';
 import type { FocusForm } from './types';
 
 interface FocusEntryProps {
@@ -25,22 +24,11 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
   const [view, setView] = useState<'entry' | 'focus' | 'done'>('entry');
   const [activeForm, setActiveForm] = useState<FocusForm | null>(null);
   const [activeFieldIds, setActiveFieldIds] = useState<string[]>([]);
-  const [demoMode, setDemoMode] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanReason, setScanReason] = useState<string | null>(null);
   const [completion, setCompletion] = useState<CompletionState | null>(null);
 
   useSpotlight(activeFieldIds, activeForm ?? EMPTY_FORM);
-
-  const startDemo = (form: FocusForm) => {
-    const preparedForm = activePersona ? autoFillFromVault(form, activePersona) : form;
-    setActiveForm(preparedForm);
-    setActiveFieldIds([]);
-    setDemoMode(true);
-    setScanReason(null);
-    setCompletion(null);
-    setView('focus');
-  };
 
   const startLiveForm = async () => {
     if (!activePersona || scanning) return;
@@ -49,12 +37,11 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
     try {
       const result = await scanActivePageForm();
       if (!result.ok || !result.form) {
-        setScanReason(result.reason ?? 'Could not scan this page. Try a demo form instead.');
+        setScanReason(result.reason ?? 'No usable form fields were found. Try a page with a form.');
         return;
       }
       setActiveForm(autoFillFromVault(result.form, activePersona));
       setActiveFieldIds([]);
-      setDemoMode(false);
       setCompletion(null);
       setView('focus');
     } finally {
@@ -71,18 +58,6 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
 
   const confirmValues = async (values: Record<string, string>) => {
     if (!activeForm) return;
-    if (demoMode) {
-      void clearSpotlight();
-      setActiveFieldIds([]);
-      setCompletion({
-        kind: 'success',
-        message: 'Demo complete. No real page was changed.',
-        failedFields: [],
-      });
-      setView('done');
-      return;
-    }
-
     const result = await fillConfirmedFields(values, activeForm);
     void clearSpotlight();
     setActiveFieldIds([]);
@@ -162,7 +137,7 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
 
       {scanReason && (
         <p role="status" aria-live="polite" className="rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-[11px] font-semibold text-[#D97706]">
-          {scanReason} Try either demo form below.
+          {scanReason}
         </p>
       )}
 
@@ -175,22 +150,6 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
         {scanning ? 'Scanning page…' : 'Start Focus Mode'}
       </button>
 
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => startDemo(mockLongForm)}
-          className="rounded-xl border border-[#E2E8F0] bg-white px-2.5 py-2 text-[11px] font-semibold text-[#475569] transition hover:bg-[#F8F9FC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#331E6D]/40"
-        >
-          Try demo form
-        </button>
-        <button
-          type="button"
-          onClick={() => startDemo(mockShortForm)}
-          className="rounded-xl border border-[#E2E8F0] bg-white px-2.5 py-2 text-[11px] font-semibold text-[#475569] transition hover:bg-[#F8F9FC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#331E6D]/40"
-        >
-          Try short demo
-        </button>
-      </div>
     </section>
   );
 }

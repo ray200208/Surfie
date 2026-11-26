@@ -160,7 +160,7 @@ export async function scanActivePageForm(): Promise<{
       return {
         ok: false,
         form: null,
-        reason: 'No usable form fields were found on this page. Try a demo form instead.',
+        reason: 'No usable form fields were found on this page. Try a page with a form.',
       };
     }
     return { ok: true, form };
@@ -168,7 +168,7 @@ export async function scanActivePageForm(): Promise<{
     return {
       ok: false,
       form: null,
-      reason: error instanceof Error ? error.message : 'Could not scan this page. Try a demo form instead.',
+      reason: error instanceof Error ? error.message : 'Could not scan this page. Please try again.',
     };
   }
 }
