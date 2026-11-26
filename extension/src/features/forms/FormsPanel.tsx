@@ -3,6 +3,7 @@ import { ScanSearch, Lock, UserCheck, AlertTriangle, CheckCircle2 } from 'lucide
 import { sendToActiveTab } from '../../shared/messages';
 import { getVaultState, setActivePersonaId } from '../../shared/storage';
 import type { ExecutionLayer, PersonaProfile, VisibleDomElement } from '../../shared/types';
+import FocusEntry from './focus/FocusEntry';
 
 interface FormsPanelProps {
   onLayerChange: (layer: ExecutionLayer) => void;
@@ -53,6 +54,11 @@ export const FormsPanel: React.FC<FormsPanelProps> = ({ onLayerChange }) => {
 
   return (
     <div className="space-y-3.5">
+      {/* Focus Mode entry */}
+      <section aria-label="Focus Mode">
+        <FocusEntry activePersona={activePersona} />
+      </section>
+
       {/* Local Persona Vault Card */}
       <div className="rounded-xl border border-[#E2E8F0] bg-white p-4 shadow-xs space-y-3">
         <div className="flex items-start justify-between gap-2">
