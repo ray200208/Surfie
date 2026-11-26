@@ -9,6 +9,7 @@ import type {
 } from '../shared/types';
 import { clearHighlights, highlightElement } from './shadowOverlay';
 import './focusSpotlight';
+import './focusScan';
 
 function detectDomainType(url: string): DomainType {
   const lower = url.toLowerCase();

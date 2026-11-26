@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Focus Mode Scanner Test Form</title>
+    <style>
+      body { font: 16px/1.5 Arial, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; color: #25304a; }
+      section { margin: 2rem 0; padding: 1rem; border: 1px solid #d8dce6; border-radius: 8px; }
+      label { display: block; margin: .8rem 0; }
+      input, select, textarea { display: block; margin-top: .25rem; padding: .4rem; }
+      fieldset { margin: 1rem 0; }
+      .spacer { height: 1900px; background: linear-gradient(#fff, #f8f9fc); }
+    </style>
+  </head>
+  <body>
+    <h1>Scholarship application test form</h1>
+    <form>
+      <section aria-label="Personal details">
+        <h2>Personal</h2>
+        <label for="student-name">Full name</label>
+        <input id="student-name" name="student_name" type="text" placeholder="Test Student" />
+        <label for="student-email">Email</label>
+        <input id="student-email" name="student_email" type="email" placeholder="test@example.com" />
+        <label for="student-phone">Phone</label>
+        <input id="student-phone" name="student_phone" type="tel" placeholder="0000000000" />
+        <label for="birth-date">Date of birth</label>
+        <input id="birth-date" name="birth_date" type="date" />
+        <label for="pin-code">Pin code</label>
+        <input id="pin-code" name="postal_pin_code" type="text" placeholder="000000" />
+        <label for="citizenship">Citizenship status</label>
+        <select id="citizenship" name="citizenship">
+          <option value="">Choose a status</option>
+          <option value="citizen">Indian citizen</option>
+          <option value="nri">NRI</option>
+          <option value="oci">OCI cardholder</option>
+          <option value="other">Other</option>
+        </select>
+      </section>
+
+      <section aria-label="Academic details">
+        <h2>Academic</h2>
+        <label for="courses">Relevant subjects</label>
+        <select id="courses" name="courses" multiple>
+          <option value="science">Science</option>
+          <option value="math">Mathematics</option>
+          <option value="arts">Arts</option>
+        </select>
+        <fieldset>
+          <legend>Study level</legend>
+          <label><input type="radio" name="study_level" value="undergrad" /> Undergraduate</label>
+          <label><input type="radio" name="study_level" value="postgrad" /> Postgraduate</label>
+        </fieldset>
+        <fieldset>
+          <legend>Areas of interest</legend>
+          <label><input type="checkbox" name="interests" value="research" /> Research</label>
+          <label><input type="checkbox" name="interests" value="community" /> Community work</label>
+        </fieldset>
+        <label for="required-confirmation">I confirm the information above</label>
+        <input id="required-confirmation" name="confirm_info" type="checkbox" required />
+      </section>
+
+      <section aria-label="Contact details">
+        <h2>Contact</h2>
+        <label for="contact-email">Alternate contact email</label>
+        <input id="contact-email" name="alternate_email" type="email" placeholder="alternate@example.com" />
+        <label for="address">Mailing address</label>
+        <textarea id="address" name="mailing_address" placeholder="Test address"></textarea>
+        <label><input type="checkbox" name="privacy_consent" value="yes" /> I agree to the privacy policy</label>
+      </section>
+
+      <section aria-label="Sensitive fields">
+        <h2>Excluded examples</h2>
+        <label for="password">Password</label>
+        <input id="password" name="pwd" type="password" />
+        <label for="password-labelled">Password</label>
+        <input id="password-labelled" name="pwd_text" type="text" />
+        <label for="otp">One-time verification code</label>
+        <input id="otp" name="verification_code" type="text" autocomplete="one-time-code" />
+        <label for="card-number">Card number</label>
+        <input id="card-number" name="credit_card_number" type="text" />
+        <label for="cvv">CVV</label>
+        <input id="cvv" name="security_cvv" type="text" />
+        <label for="upload">Supporting document</label>
+        <input id="upload" name="supporting_file" type="file" />
+      </section>
+
+      <div class="spacer" aria-hidden="true"></div>
+      <section aria-label="Below the fold">
+        <h2>Additional details</h2>
+        <label for="below-fold">Additional notes</label>
+        <textarea id="below-fold" name="additional_notes" placeholder="Test notes"></textarea>
+      </section>
+    </form>
+  </body>
+</html>
