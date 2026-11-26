@@ -161,7 +161,7 @@ export function buildPlan(form: FocusForm, modeOverride?: FocusMode): FocusPlan 
 }
 
 const SENSITIVE_FIELD_PATTERN =
-  /password|passcode|\botp\b|one[\s_-]*time|card[\s_-]*number|\bcvv\b|\bcvc\b/i;
+  /password|passcode|\bpin(?:[\s_-]*(?:code|number))?\b|otp|one[\s_-]*time|verification[\s_-]*code|card|credit|debit|cvv|cvc|expir(y|ation)|aadhaar|aadhar|ssn|account[\s_-]*number|ifsc/i;
 
 export function isSensitiveField(field: FocusField): boolean {
   return SENSITIVE_FIELD_PATTERN.test(`${field.inputType} ${field.label} ${field.id}`);
