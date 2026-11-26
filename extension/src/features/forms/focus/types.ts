@@ -30,7 +30,7 @@ export interface FocusField {
   required: boolean;
   groupId: string;
   vaultKey?: FocusVaultKey;
-  options?: { value: string; label: string }[];
+  options?: { value: string; label: string; selector?: string }[];
   consent?: boolean;
   value: string;
   source: FocusFieldSource | null;

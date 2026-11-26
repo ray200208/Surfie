@@ -1,6 +1,8 @@
-import { sendToActiveTab } from '../../../shared/messages';
 import { isSensitiveField } from './plan';
-import type { FocusForm } from './types';
+import { sendToActiveTab } from './tabMessaging';
+import type { FocusFillFieldsResponse } from './fillMessages';
+import type { FocusForm, FocusField } from './types';
+import type { ScannedFieldKind } from './scanMessages';
 
 export interface SkippedConfirmedField {
   fieldId: string;
@@ -20,7 +22,28 @@ interface PendingFill {
   fieldId: string;
   label: string;
   selector: string;
+  kind: ScannedFieldKind;
   value: string;
+  optionSelectors: Record<string, string>;
+}
+
+function fillKind(field: FocusField): ScannedFieldKind {
+  if (field.inputType === 'textarea') return 'textarea';
+  if (field.inputType === 'select') return 'select';
+  if (field.inputType === 'checkbox') return 'checkbox';
+  if (field.inputType === 'radio') return 'radio-group';
+  if (field.inputType === 'multiselect') {
+    return field.selector?.includes(',') ? 'checkbox-group' : 'multiselect';
+  }
+  return 'text';
+}
+
+function optionSelectorsFor(field: FocusField): Record<string, string> {
+  return Object.fromEntries(
+    (field.options ?? [])
+      .filter((option): option is typeof option & { selector: string } => Boolean(option.selector))
+      .map((option) => [option.value, option.selector])
+  );
 }
 
 export async function fillConfirmedFields(
@@ -29,71 +52,72 @@ export async function fillConfirmedFields(
 ): Promise<FillConfirmedResult> {
   const skippedFields: SkippedConfirmedField[] = [];
   const pending: PendingFill[] = [];
+  const fieldsById = new Map(form.fields.map((field) => [field.id, field]));
 
-  try {
-    const fieldsById = new Map(form.fields.map((field) => [field.id, field]));
-
-    for (const [fieldId, value] of Object.entries(values)) {
-      const field = fieldsById.get(fieldId);
-      if (!field) {
-        skippedFields.push({ fieldId, label: fieldId, reason: 'Field was not found in the scanned form.' });
-        continue;
-      }
-      if (isSensitiveField(field)) {
-        skippedFields.push({ fieldId, label: field.label, reason: 'Sensitive fields are never filled.' });
-        continue;
-      }
-      if (!value.trim()) {
-        skippedFields.push({ fieldId, label: field.label, reason: 'Empty values are not sent.' });
-        continue;
-      }
-      if (!field.selector) {
-        skippedFields.push({ fieldId, label: field.label, reason: 'No page selector is available.' });
-        continue;
-      }
-      pending.push({ fieldId, label: field.label, selector: field.selector, value });
+  for (const [fieldId, value] of Object.entries(values)) {
+    const field = fieldsById.get(fieldId);
+    if (!field) {
+      skippedFields.push({ fieldId, label: fieldId, reason: 'Field was not found in the scanned form.' });
+      continue;
     }
-
-    if (pending.length === 0) {
-      return {
-        ok: skippedFields.length === 0,
-        filledCount: 0,
-        skippedFields,
-        failedFields: [],
-      };
+    if (isSensitiveField(field)) {
+      skippedFields.push({ fieldId, label: field.label, reason: 'Sensitive fields are never filled.' });
+      continue;
     }
-
-    const response = await sendToActiveTab({
-      type: 'FILL_SAFE_FIELDS',
-      payload: {
-        fields: pending.map(({ selector, value }) => ({ selector, value })),
-      },
+    if (!value.trim()) {
+      skippedFields.push({ fieldId, label: field.label, reason: 'Empty values are not sent.' });
+      continue;
+    }
+    if (!field.selector) {
+      skippedFields.push({ fieldId, label: field.label, reason: 'No page selector is available.' });
+      continue;
+    }
+    pending.push({
+      fieldId,
+      label: field.label,
+      selector: field.selector,
+      kind: fillKind(field),
+      value,
+      optionSelectors: optionSelectorsFor(field),
     });
-    const missingSelectors = new Set(response.missingSelectors);
+  }
+
+  if (pending.length === 0) {
+    return { ok: skippedFields.length === 0, filledCount: 0, skippedFields, failedFields: [] };
+  }
+
+  const fallback: FocusFillFieldsResponse = {
+    filled: [],
+    skipped: pending.map((field) => ({ selector: field.selector, reason: 'Could not reach the page safely.' })),
+  };
+  try {
+    const response = await sendToActiveTab(
+      {
+        type: 'FOCUS_FILL_FIELDS' as const,
+        items: pending.map(({ selector, kind, value, optionSelectors }) => ({
+          selector, kind, value, optionSelectors,
+        })),
+      },
+      fallback
+    );
+    const filledSelectors = new Set(response.filled);
+    const fieldBySelector = new Map(pending.map((field) => [field.selector, field]));
+    response.skipped.forEach((skipped) => {
+      const field = fieldBySelector.get(skipped.selector);
+      skippedFields.push({
+        fieldId: field?.fieldId ?? skipped.selector,
+        label: field?.label ?? skipped.selector,
+        reason: skipped.reason,
+      });
+    });
     const failedFields = pending
-      .filter((field) => missingSelectors.has(field.selector))
+      .filter((field) => !filledSelectors.has(field.selector))
+      .filter((field) => !response.skipped.some((skipped) => skipped.selector === field.selector))
       .map((field) => field.label);
-
-    if (response.skippedSensitiveCount > 0) {
-      failedFields.push('A page field was flagged as sensitive and skipped.');
-    }
-
-    const unaccountedCount =
-      pending.length - response.filledCount - failedFields.filter((label) =>
-        pending.some((field) => field.label === label)
-      ).length;
-    if (unaccountedCount > 0) {
-      const alreadyFailed = new Set(failedFields);
-      const unaccounted = pending
-        .filter((field) => !missingSelectors.has(field.selector) && !alreadyFailed.has(field.label))
-        .slice(-unaccountedCount)
-        .map((field) => field.label);
-      failedFields.push(...unaccounted);
-    }
 
     return {
       ok: skippedFields.length === 0 && failedFields.length === 0,
-      filledCount: response.filledCount,
+      filledCount: response.filled.length,
       skippedFields,
       failedFields,
     };

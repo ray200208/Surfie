@@ -7,10 +7,9 @@ import type {
   ScannedFieldKind,
   ScannedOption,
 } from '../features/forms/focus/scanMessages';
+import { getSensitiveFieldReason, isOtpInputMetadata } from '../features/forms/focus/fieldSafety';
 
 const MAX_FIELDS = 500;
-const SENSITIVE_WORDS = /password|passcode|otp|one[\s_-]*time|verification[\s_-]*code|card[\s_-]*number|credit|debit|cvv|cvc|expir(y|ation)|aadhaar|aadhar|ssn|account[\s_-]*number|ifsc/i;
-const AUTOCOMPLETE_SENSITIVE = /^(current-password|new-password|one-time-code|cc-)/i;
 
 interface ScanContext {
   elements: ScannedField[];
@@ -214,38 +213,32 @@ function sensitiveReason(
   el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
   label: string
 ): string | null {
-  const type = isInput(el) ? (el.getAttribute('type') ?? 'text').toLowerCase() : '';
-  const autocomplete = (el.getAttribute('autocomplete') ?? '').trim().split(/\s+/);
-  const name = el.getAttribute('name') ?? '';
-  const id = el.getAttribute('id') ?? '';
-  const placeholder = el.getAttribute('placeholder') ?? '';
-  const ariaLabel = el.getAttribute('aria-label') ?? '';
-  const descriptor = `${name} ${id} ${label} ${placeholder} ${ariaLabel}`;
-
-  if (type === 'password' || type === 'hidden') return 'sensitive credential field';
-  if (autocomplete.some((token) => AUTOCOMPLETE_SENSITIVE.test(token))) return 'sensitive credential field';
-  if (SENSITIVE_WORDS.test(descriptor) || /\bpin\b/i.test(descriptor.replace(/\bpin[\s_-]*(?:code|number)\b/gi, ''))) {
-    return 'sensitive field';
-  }
-
+  const style = el.ownerDocument.defaultView?.getComputedStyle(el) as
+    | (CSSStyleDeclaration & { webkitTextSecurity?: string })
+    | undefined;
   try {
-    const style = el.ownerDocument.defaultView?.getComputedStyle(el) as
-      | (CSSStyleDeclaration & { webkitTextSecurity?: string })
-      | undefined;
-    if (style?.webkitTextSecurity && style.webkitTextSecurity !== 'none') return 'obscured text field';
+    return getSensitiveFieldReason({
+      type: isInput(el) ? (el.getAttribute('type') ?? 'text') : '',
+      autocomplete: el.getAttribute('autocomplete') ?? '',
+      name: el.getAttribute('name') ?? '',
+      id: el.getAttribute('id') ?? '',
+      label,
+      placeholder: el.getAttribute('placeholder') ?? '',
+      ariaLabel: el.getAttribute('aria-label') ?? '',
+      webkitTextSecurity: style?.webkitTextSecurity,
+    });
   } catch {
     return 'could not verify field safety';
   }
-  return null;
 }
 
 function isOtpBox(el: HTMLInputElement): boolean {
-  const maxLength = el.maxLength;
-  const type = (el.getAttribute('type') ?? 'text').toLowerCase();
-  const numericHint = type === 'number' || type === 'tel' ||
-    el.getAttribute('inputmode') === 'numeric' ||
-    Boolean(el.getAttribute('pattern')?.includes('0-9'));
-  return maxLength === 1 && numericHint;
+  return isOtpInputMetadata(
+    el.maxLength,
+    el.getAttribute('type') ?? 'text',
+    el.getAttribute('inputmode') ?? '',
+    el.getAttribute('pattern') ?? ''
+  );
 }
 
 function findOtpRows(root: Document | ShadowRoot): Set<HTMLInputElement> {
@@ -372,6 +365,7 @@ function createCandidate(
 }
 
 function isSkippedControl(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): boolean {
+  if (isInput(el) && (el.getAttribute('type') ?? '').toLowerCase() === 'hidden') return false;
   if (hasHiddenAncestor(el)) return true;
   if (isInput(el)) {
     const type = (el.getAttribute('type') ?? 'text').toLowerCase();
