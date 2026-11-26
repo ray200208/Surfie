@@ -13,7 +13,10 @@ export type FocusFieldInputType =
   | 'number'
   | 'date'
   | 'select'
-  | 'textarea';
+  | 'textarea'
+  | 'checkbox'
+  | 'radio'
+  | 'multiselect';
 
 export type FocusVaultKey = Extract<
   keyof PersonaProfile,
@@ -28,6 +31,7 @@ export interface FocusField {
   groupId: string;
   vaultKey?: FocusVaultKey;
   options?: { value: string; label: string }[];
+  consent?: boolean;
   value: string;
   source: FocusFieldSource | null;
   confidence: number;

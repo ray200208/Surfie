@@ -19,6 +19,29 @@ function isEmpty(value: string): boolean {
   return value.trim().length === 0;
 }
 
+export function parseMulti(value: string): string[] {
+  return value === '' ? [] : value.split('\n').filter((item) => item !== '');
+}
+
+export function serializeMulti(values: string[]): string {
+  return values.join('\n');
+}
+
+function isUnanswered(field: FocusField): boolean {
+  if (field.inputType === 'checkbox') return field.value !== 'true';
+  if (field.inputType === 'multiselect') return parseMulti(field.value).length === 0;
+  return isEmpty(field.value);
+}
+
+function findOption(field: FocusField, value: string) {
+  const normalizedValue = value.trim().toLowerCase();
+  return field.options?.find(
+    (option) =>
+      option.value.trim().toLowerCase() === normalizedValue ||
+      option.label.trim().toLowerCase() === normalizedValue
+  );
+}
+
 export function chooseMode(form: FocusForm): FocusMode {
   return form.fields.length <= SHORT_FORM_MAX_FIELDS ? 'spotlight-only' : 'cards';
 }
@@ -27,22 +50,36 @@ export function autoFillFromVault(form: FocusForm, persona: PersonaProfile): Foc
   let changed = false;
   const fields = form.fields.map((field) => {
     if (!field.vaultKey || !(field.confidence >= AUTO_FILL_MIN_CONFIDENCE)) return field;
+    if (field.consent) return field;
 
     const value = persona[field.vaultKey];
     if (typeof value !== 'string' || isEmpty(value)) return field;
 
+    let fillValue = value;
     if (field.inputType === 'select' && field.options?.length) {
-      const normalizedValue = value.trim().toLowerCase();
-      const matchingOption = field.options.find(
-        (option) =>
-          option.value.trim().toLowerCase() === normalizedValue ||
-          option.label.trim().toLowerCase() === normalizedValue
-      );
-      if (!matchingOption) return field;
+      const matchingOptions = [findOption(field, value)];
+      if (!matchingOptions[0]) return field;
+      fillValue = matchingOptions[0]!.value;
+    } else if (
+      field.inputType === 'checkbox' ||
+      field.inputType === 'radio' ||
+      field.inputType === 'multiselect'
+    ) {
+      if (!field.options?.length) return field;
+      const values = field.inputType === 'multiselect' ? parseMulti(value) : [value];
+      const matchingOptions = values.map((item) => findOption(field, item));
+      if (values.length === 0 || matchingOptions.some((option) => option === undefined)) return field;
+      if (field.inputType === 'checkbox') {
+        fillValue = 'true';
+      } else if (field.inputType === 'multiselect') {
+        fillValue = serializeMulti(matchingOptions.map((option) => option!.value));
+      } else {
+        fillValue = matchingOptions[0]!.value;
+      }
     }
 
     changed = true;
-    return { ...field, value, source: 'vault' as const };
+    return { ...field, value: fillValue, source: 'vault' as const };
   });
 
   return changed ? { ...form, fields } : form;
@@ -133,7 +170,7 @@ export function buildPlan(form: FocusForm, modeOverride?: FocusMode): FocusPlan 
     .filter((field) => field.source === 'vault')
     .map((field) => field.id);
   const gapFields = form.fields.filter(
-    (field) => field.source !== 'vault' && (isEmpty(field.value) || field.source === null)
+    (field) => (field.source !== 'vault' || isUnanswered(field)) && isUnanswered(field)
   );
   const gapFieldIds = gapFields.map((field) => field.id);
   const gapFieldIdSet = new Set(gapFieldIds);
@@ -161,7 +198,7 @@ export function buildPlan(form: FocusForm, modeOverride?: FocusMode): FocusPlan 
 }
 
 const SENSITIVE_FIELD_PATTERN =
-  /password|passcode|\bpin(?:[\s_-]*(?:code|number))?\b|otp|one[\s_-]*time|verification[\s_-]*code|card|credit|debit|cvv|cvc|expir(y|ation)|aadhaar|aadhar|ssn|account[\s_-]*number|ifsc/i;
+  /password|passcode|\bpin\b(?![\s_-]*(?:code|number)\b)|otp|one[\s_-]*time|verification[\s_-]*code|card|credit|debit|cvv|cvc|expir(y|ation)|aadhaar|aadhar|ssn|account[\s_-]*number|ifsc/i;
 
 export function isSensitiveField(field: FocusField): boolean {
   return SENSITIVE_FIELD_PATTERN.test(`${field.inputType} ${field.label} ${field.id}`);
@@ -170,10 +207,22 @@ export function isSensitiveField(field: FocusField): boolean {
 export function buildReviewItems(form: FocusForm): ReviewItem[] {
   return form.fields.map((field: FocusField) => {
     const sensitive = isSensitiveField(field);
-    const matchingOption =
-      field.inputType === 'select'
-        ? field.options?.find((option) => option.value === field.value)
-        : undefined;
+    const matchingOption = field.inputType === 'select' ? findOption(field, field.value) : undefined;
+
+    const selectedValues =
+      field.inputType === 'multiselect'
+        ? parseMulti(field.value)
+        : field.inputType === 'radio'
+          ? [field.value]
+          : [];
+    const selectedLabels = selectedValues.map((value) => findOption(field, value)?.label ?? value);
+    const displayValue =
+      field.inputType === 'checkbox'
+        ? field.value === 'true' ? 'Yes' : 'No'
+        : field.inputType === 'radio' || field.inputType === 'multiselect'
+          ? selectedLabels.join(', ')
+          : matchingOption?.label ?? field.value;
+    const missing = field.required && isUnanswered(field);
 
     return {
       fieldId: field.id,
@@ -181,12 +230,10 @@ export function buildReviewItems(form: FocusForm): ReviewItem[] {
       inputType: field.inputType,
       ...(field.options ? { options: field.options.map((option) => ({ ...option })) } : {}),
       value: sensitive ? '' : field.value,
-      displayValue: sensitive
-        ? 'Hidden (you type this yourself)'
-        : matchingOption?.label ?? field.value,
+      displayValue: sensitive ? 'Hidden (you type this yourself)' : displayValue,
       source: field.source,
       required: field.required,
-      missing: !sensitive && field.required && isEmpty(field.value),
+      missing: !sensitive && missing,
       sensitive,
     };
   });
