@@ -7,6 +7,7 @@ import { DiscoveryPanel } from '../features/discovery/DiscoveryPanel';
 import { ComparePanel } from '../features/compare/ComparePanel';
 import { FormsPanel } from '../features/forms/FormsPanel';
 import { ReplayPanel } from '../features/replay/ReplayPanel';
+import { getRecBuffer } from '../features/replay/replayEngine';
 
 const MODE_TABS: { id: PandaMode; label: string }[] = [
   { id: 'discovery', label: 'Spotlight' },
@@ -63,17 +64,21 @@ export function App() {
   const [lastCommand, setLastCommand] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const isReplayingRef = useRef(false);
 
   // Sync active tab metadata on mount + listen for live tab switches from service worker
   useEffect(() => {
     if (typeof chrome === 'undefined' || !chrome.tabs?.query) return;
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
       const tab = tabs[0];
+      const rec = await getRecBuffer().catch(() => null);
       if (tab?.url) {
         setActiveUrl(tab.url);
         setActiveTitle(tab.title ?? '');
-        setActiveMode(autoDetectMode(tab.url));
+        setActiveMode(rec?.active ? 'replay' : autoDetectMode(tab.url));
+      } else if (rec?.active) {
+        setActiveMode('replay');
       }
     });
 
@@ -81,8 +86,18 @@ export function App() {
       if (message?.type === 'ACTIVE_TAB_UPDATED') {
         setActiveUrl(message.payload.url);
         setActiveTitle(message.payload.title);
-        if (message.payload.url) {
-          setActiveMode(autoDetectMode(message.payload.url));
+        if (message.payload.url && !isReplayingRef.current) {
+          getRecBuffer()
+            .then((rec) => {
+              if (!rec.active && !isReplayingRef.current) {
+                setActiveMode(autoDetectMode(message.payload.url));
+              }
+            })
+            .catch(() => {
+              if (!isReplayingRef.current) {
+                setActiveMode(autoDetectMode(message.payload.url));
+              }
+            });
         }
       }
     };
@@ -271,7 +286,14 @@ export function App() {
         )}
         {activeMode === 'compare' && <ComparePanel onLayerChange={setExecutionLayer} />}
         {activeMode === 'forms' && <FormsPanel onLayerChange={setExecutionLayer} />}
-        {activeMode === 'replay' && <ReplayPanel onLayerChange={setExecutionLayer} />}
+        {activeMode === 'replay' && (
+          <ReplayPanel
+            onLayerChange={setExecutionLayer}
+            onReplayingChange={(v) => {
+              isReplayingRef.current = v;
+            }}
+          />
+        )}
       </main>
 
       {/* Persistent Telemetry Footer */}

@@ -37,10 +37,30 @@ export interface HighlightTarget {
 
 export interface WorkflowStep {
   selector: string;
-  action: 'fill' | 'click' | 'check';
+  action: 'fill' | 'click' | 'check' | 'scroll' | 'keypress' | 'seek';
   personaKey?: keyof PersonaProfile;
   value?: string;
   label?: string;
+  /** Page URL where the step was recorded (enables cross-page / cross-tab replay). */
+  url?: string;
+  /** Epoch ms when the step was recorded. */
+  ts?: number;
+  /** Stable identifying info about the target element (used when the selector breaks). */
+  target?: StepTarget;
+}
+
+export interface StepTarget {
+  tag: string;
+  type?: string;
+  id?: string;
+  name?: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  role?: string;
+  text?: string;
+  href?: string;
+  xpath?: string;
+  parents?: string[];
 }
 
 export interface WorkflowRecipe {
@@ -48,6 +68,9 @@ export interface WorkflowRecipe {
   name: string;
   urlPattern: string;
   steps: WorkflowStep[];
+  /** URL the workflow was recorded from; replay is blocked unless the browser is here. */
+  startUrl?: string;
+  createdAt?: number;
 }
 
 export interface VisibleDomElement {

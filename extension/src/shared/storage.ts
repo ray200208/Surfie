@@ -107,3 +107,13 @@ export async function saveSitePreference(
     await chrome.storage.local.set({ [STORAGE_KEY]: next });
   }
 }
+
+export async function deleteWorkflowRecipe(id: string): Promise<WorkflowRecipe[]> {
+  const current = await getVaultState();
+  const nextWorkflows = current.workflows.filter((w) => w.id !== id);
+  const next: PandaStorageSchema = { ...current, workflows: nextWorkflows };
+  if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+    await chrome.storage.local.set({ [STORAGE_KEY]: next });
+  }
+  return nextWorkflows;
+}
