@@ -7,8 +7,10 @@ import {
   getConfirmableValues,
 } from './plan';
 import type { FocusForm, FocusMode, FocusStep } from './types';
+import type { LanguageCode } from '../../../shared/types';
 import FocusField from './FocusField';
 import ReviewCard from './ReviewCard';
+import VoiceButton from './VoiceButton';
 
 export interface FocusPanelProps {
   form: FocusForm;
@@ -32,6 +34,7 @@ export default function FocusPanel({
   const [localForm, setLocalForm] = useState(form);
   const [plan, setPlan] = useState(() => buildPlan(form));
   const [mode, setMode] = useState<FocusMode>(() => buildPlan(form).mode);
+  const [language, setLanguage] = useState<LanguageCode>('EN');
   const [stepIndex, setStepIndex] = useState(0);
   const [temporaryEditFieldId, setTemporaryEditFieldId] = useState<string | null>(null);
   const [showingOriginal, setShowingOriginal] = useState(false);
@@ -176,15 +179,18 @@ export default function FocusPanel({
             <p className="text-[10px] font-bold uppercase tracking-wider text-[#331E6D]">Focus Mode</p>
             <h2 className="mt-0.5 truncate text-sm font-bold text-[#1E1B4B]">{localForm.title}</h2>
           </div>
-          {onExit && (
-            <button
-              type="button"
-              onClick={onExit}
-              className="shrink-0 rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#475569] transition hover:bg-[#F8F9FC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#331E6D]/40"
-            >
-              Exit
-            </button>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <VoiceButton language={language} onLanguageChange={setLanguage} />
+            {onExit && (
+              <button
+                type="button"
+                onClick={onExit}
+                className="rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#475569] transition hover:bg-[#F8F9FC] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#331E6D]/40"
+              >
+                Exit
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-2">
