@@ -7,7 +7,9 @@ export function useSpotlight(activeFieldIds: string[], form: FocusForm): void {
   const activeFields = activeFieldIds
     .map((fieldId) => fieldsById.get(fieldId))
     .filter((field): field is FocusField => Boolean(field?.selector));
-  const selectors = activeFields.map((field) => field.selector as string);
+  const selectors = activeFields.flatMap((field) =>
+    (field.selector as string).split(',').map((selector) => selector.trim()).filter(Boolean)
+  );
   const signature = JSON.stringify(selectors);
   const label =
     activeFields.length === 1

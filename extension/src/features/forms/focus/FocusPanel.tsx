@@ -5,6 +5,7 @@ import {
   buildReviewItems,
   canSubmit,
   getConfirmableValues,
+  parseMulti,
 } from './plan';
 import type { FocusForm, FocusMode, FocusStep } from './types';
 import type { LanguageCode } from '../../../shared/types';
@@ -22,6 +23,12 @@ export interface FocusPanelProps {
 
 function isBlank(value: string): boolean {
   return value.trim().length === 0;
+}
+
+function isFieldAnswered(field: FocusForm['fields'][number]): boolean {
+  if (field.inputType === 'checkbox') return field.value === 'true';
+  if (field.inputType === 'multiselect') return parseMulti(field.value).length > 0;
+  return !isBlank(field.value);
 }
 
 export default function FocusPanel({
@@ -76,7 +83,7 @@ export default function FocusPanel({
   const requiredFieldsComplete =
     currentStep.kind === 'review'
       ? canSubmit(buildReviewItems(localForm))
-      : stepFields.filter((field) => field.required).every((field) => !isBlank(field.value));
+      : stepFields.filter((field) => field.required).every(isFieldAnswered);
   const canSkip =
     currentStep.kind !== 'review' &&
     stepFields.length > 0 &&
