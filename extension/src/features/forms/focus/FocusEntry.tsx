@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PersonaProfile } from '../../../shared/types';
+import { getVaultState } from '../../../shared/storage';
 import { autoFillFromVault } from './plan';
 import { fillConfirmedFields } from './fillConfirmed';
 import { scanActivePageForm } from './liveForm';
@@ -21,6 +22,7 @@ type CompletionState = {
 const EMPTY_FORM: FocusForm = { id: 'empty', title: '', fields: [], groups: [] };
 
 export default function FocusEntry({ activePersona }: FocusEntryProps) {
+  const [fillingPersona, setFillingPersona] = useState(activePersona);
   const [view, setView] = useState<'entry' | 'focus' | 'done'>('entry');
   const [activeForm, setActiveForm] = useState<FocusForm | null>(null);
   const [activeFieldIds, setActiveFieldIds] = useState<string[]>([]);
@@ -28,22 +30,48 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
   const [scanReason, setScanReason] = useState<string | null>(null);
   const [completion, setCompletion] = useState<CompletionState | null>(null);
 
+  useEffect(() => {
+    if (!activePersona) return;
+    let stillMounted = true;
+    void getVaultState()
+      .then((vault) => {
+        if (!stillMounted) return;
+        setFillingPersona(
+          vault.personas.find((persona) => persona.id === activePersona.id) ?? activePersona
+        );
+      })
+      .catch(() => {
+        if (stillMounted) setFillingPersona(activePersona);
+      });
+    return () => { stillMounted = false; };
+  }, [activePersona]);
+
   useSpotlight(activeFieldIds, activeForm ?? EMPTY_FORM);
 
   const startLiveForm = async () => {
-    if (!activePersona || scanning) return;
+    if (scanning) return;
     setScanning(true);
     setScanReason(null);
     try {
-      const result = await scanActivePageForm();
+      const vault = await getVaultState();
+      const persona = vault.personas.find((item) => item.id === vault.activePersonaId) ??
+        vault.personas[0] ?? activePersona;
+      if (!persona) {
+        setScanReason('No active persona is available. Choose a persona in the Local Persona Vault.');
+        return;
+      }
+      setFillingPersona(persona);
+      const result = await scanActivePageForm(persona);
       if (!result.ok || !result.form) {
         setScanReason(result.reason ?? 'No usable form fields were found. Try a page with a form.');
         return;
       }
-      setActiveForm(autoFillFromVault(result.form, activePersona));
+      setActiveForm(autoFillFromVault(result.form, persona));
       setActiveFieldIds([]);
       setCompletion(null);
       setView('focus');
+    } catch (error) {
+      setScanReason(error instanceof Error ? error.message : 'Could not start Focus Mode. Please try again.');
     } finally {
       setScanning(false);
     }
@@ -85,13 +113,18 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
 
   if (view === 'focus' && activeForm) {
     return (
-      <FocusPanel
-        form={activeForm}
-        onFormChange={setActiveForm}
-        onActiveFieldsChange={setActiveFieldIds}
-        onExit={leaveFocus}
-        onConfirm={confirmValues}
-      />
+      <div className="space-y-2">
+        <p aria-live="polite" className="rounded-xl border border-[#E2E8F0] bg-white px-3 py-2 text-[11px] font-semibold text-[#475569]">
+          Filling with: <span className="text-[#331E6D]">{fillingPersona?.label ?? fillingPersona?.fullName ?? 'No persona selected'}</span>
+        </p>
+        <FocusPanel
+          form={activeForm}
+          onFormChange={setActiveForm}
+          onActiveFieldsChange={setActiveFieldIds}
+          onExit={leaveFocus}
+          onConfirm={confirmValues}
+        />
+      </div>
     );
   }
 
@@ -99,6 +132,9 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
     const isSuccess = completion.kind === 'success';
     return (
       <section className="rounded-xl border border-[#E2E8F0] bg-white p-4 shadow-xs">
+        <p className="mb-3 text-[11px] font-semibold text-[#475569]">
+          Filling with: <span className="text-[#331E6D]">{fillingPersona?.label ?? fillingPersona?.fullName ?? 'No persona selected'}</span>
+        </p>
         <div
           role="status"
           aria-live="polite"
@@ -133,6 +169,9 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
         <p className="mt-1 text-[11px] leading-relaxed text-[#475569]">
           Fill forms step by step. Nothing is submitted without your OK.
         </p>
+        <p aria-live="polite" className="mt-2 text-[11px] font-semibold text-[#475569]">
+          Filling with: <span className="text-[#331E6D]">{fillingPersona?.label ?? fillingPersona?.fullName ?? 'No persona selected'}</span>
+        </p>
       </div>
 
       {scanReason && (
@@ -144,7 +183,7 @@ export default function FocusEntry({ activePersona }: FocusEntryProps) {
       <button
         type="button"
         onClick={() => void startLiveForm()}
-        disabled={scanning || !activePersona}
+        disabled={scanning}
         className="pp-cta-gradient w-full rounded-xl px-3 py-2 text-xs font-bold text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#331E6D]/50 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {scanning ? 'Scanning page…' : 'Start Focus Mode'}
