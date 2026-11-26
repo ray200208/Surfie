@@ -27,6 +27,7 @@ export interface FocusField {
   required: boolean;
   groupId: string;
   vaultKey?: FocusVaultKey;
+  options?: { value: string; label: string }[];
   value: string;
   source: FocusFieldSource | null;
   confidence: number;
@@ -46,7 +47,13 @@ export interface FocusForm {
   groups: FocusGroup[];
 }
 
-export type FocusStepKind = 'group' | 'review';
+export type FocusStepKind = 'group' | 'field' | 'review';
+
+export interface FocusStep {
+  kind: FocusStepKind;
+  title: string;
+  fieldIds: string[];
+}
 
 export type FocusMode = 'cards' | 'spotlight-only';
 
@@ -54,7 +61,16 @@ export interface FocusPlan {
   mode: FocusMode;
   autoFilledFieldIds: string[];
   gapFieldIds: string[];
-  steps: { kind: FocusStepKind; groupId?: string }[];
+  steps: FocusStep[];
+}
+
+export interface ReviewItem {
+  fieldId: string;
+  label: string;
+  value: string;
+  source: FocusFieldSource | null;
+  required: boolean;
+  missing: boolean;
 }
 
 /** Connects a Focus field to the existing safe-fill message contract. */

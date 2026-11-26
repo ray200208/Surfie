@@ -90,6 +90,12 @@ export const mockLongForm: FocusForm = {
       inputType: 'select',
       required: true,
       groupId: 'personal',
+      options: [
+        { value: 'indian-citizen', label: 'Indian citizen' },
+        { value: 'nri', label: 'NRI' },
+        { value: 'oci-cardholder', label: 'OCI cardholder' },
+        { value: 'other', label: 'Other' },
+      ],
       value: '',
       source: null,
       confidence: 0,
