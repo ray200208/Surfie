@@ -8,6 +8,7 @@ import type {
   WorkflowStep,
 } from '../shared/types';
 import { clearHighlights, highlightElement } from './shadowOverlay';
+import './focusSpotlight';
 
 function detectDomainType(url: string): DomainType {
   const lower = url.toLowerCase();
