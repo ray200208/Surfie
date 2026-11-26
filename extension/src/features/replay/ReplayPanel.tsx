@@ -56,6 +56,7 @@ export const ReplayPanel: React.FC<ReplayPanelProps> = ({ onLayerChange, onRepla
   const [liveCount, setLiveCount] = useState(0);
   const [liveSteps, setLiveSteps] = useState<WorkflowStep[]>([]);
   const [recordedStart, setRecordedStart] = useState<string | undefined>(undefined);
+  const [stepOverrides, setStepOverrides] = useState<Record<number, string>>({});
 
   const abortRef = useRef(false);
   const confirmResolverRef = useRef<((ok: boolean) => void) | null>(null);
@@ -71,6 +72,12 @@ export const ReplayPanel: React.FC<ReplayPanelProps> = ({ onLayerChange, onRepla
     onReplayingChange?.(isReplaying);
     return () => onReplayingChange?.(false);
   }, [isReplaying, onReplayingChange]);
+
+  useEffect(() => {
+    setStepOverrides({});
+    setStepStatuses([]);
+    setReplayResult(null);
+  }, [selectedId]);
 
   const activeSteps: WorkflowStep[] =
     selectedId === RECORDED_ID
@@ -183,7 +190,21 @@ export const ReplayPanel: React.FC<ReplayPanelProps> = ({ onLayerChange, onRepla
     let failed = false;
     for (let i = 0; i < steps.length; i++) {
       if (abortRef.current) break;
-      const step = steps[i];
+      const rawStep = steps[i];
+      const ov = stepOverrides[i];
+      const step: WorkflowStep =
+        ov !== undefined && ov.trim() !== ''
+          ? rawStep.action === 'fill'
+            ? { ...rawStep, value: ov }
+            : rawStep.action === 'click'
+              ? {
+                  ...rawStep,
+                  selector: '',
+                  label: ov.trim(),
+                  target: { ...(rawStep.target ?? { tag: '*' }), text: ov.trim() },
+                }
+              : rawStep
+          : rawStep;
       setActiveStepIndex(i);
 
       if (isSensitiveStep(step)) {
@@ -423,34 +444,86 @@ export const ReplayPanel: React.FC<ReplayPanelProps> = ({ onLayerChange, onRepla
           </div>
         )}
 
-        {activeSteps.length > 0 && (
-          <div className="space-y-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
-              Steps to Replay ({activeSteps.length})
-            </div>
-            {activeSteps.map((s, idx) => {
-              const st = stepStatuses[idx];
-              return (
-                <div
-                  key={`${s.selector}-${idx}`}
-                  className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[10px] transition-all ${rowClass(
-                    st,
-                    activeStepIndex === idx
-                  )}`}
-                >
-                  {statusIcon(st)}
-                  <span className="font-bold uppercase text-[#331E6D]">{s.action}</span>
-                  <span className="text-[#1E1B4B] truncate">{s.label || s.selector}{s.action === 'fill' && s.value ? `: ${s.value}` : ''}</span>
-                  {isHighStakesStep(s) && (
-                    <span className="ml-auto rounded bg-[#FEF3C7] px-1 text-[9px] font-bold text-[#B45309]">
-                      GATED
-                    </span>
-                  )}
+        {activeSteps.length > 0 && (() => {
+          let seenRecipient = false;
+          const customizable = activeSteps
+            .map((s, idx) => {
+              if (s.action === 'fill' && !isSensitiveStep(s)) {
+                return { idx, kind: 'fill' as const, fieldLabel: s.label || 'Message / Text', defaultVal: s.value ?? '' };
+              }
+              if (
+                !seenRecipient &&
+                s.action === 'click' &&
+                !isHighStakesStep(s) &&
+                s.url &&
+                /\/(messaging|messages|chat|dm)/i.test(s.url) &&
+                s.target?.role !== 'textbox' &&
+                !/write a message|type a message|send|messaging|messages|close|attach|emoji/i.test((s.label || '').trim())
+              ) {
+                seenRecipient = true;
+                return { idx, kind: 'click' as const, fieldLabel: 'Recipient / User', defaultVal: s.label || s.target?.text || '' };
+              }
+              return null;
+            })
+            .filter((x): x is NonNullable<typeof x> => x !== null);
+
+          return (
+            <div className="space-y-2">
+              {customizable.length > 0 && (
+                <div className="rounded-xl border border-[#E2E8F0] bg-[#F8F9FC] p-2.5 space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#331E6D]">
+                    Customize Before Replay
+                  </div>
+                  {customizable.map((item) => (
+                    <label key={`ov-${item.idx}`} className="block space-y-0.5">
+                      <span className="text-[10px] font-semibold text-[#475569]">{item.fieldLabel}</span>
+                      <input
+                        type="text"
+                        disabled={isReplaying}
+                        value={stepOverrides[item.idx] ?? item.defaultVal}
+                        onChange={(e) =>
+                          setStepOverrides((prev) => ({ ...prev, [item.idx]: e.target.value }))
+                        }
+                        placeholder={item.kind === 'fill' ? 'Enter text to type…' : 'Enter user / chat name…'}
+                        className="w-full rounded-lg border border-[#E2E8F0] bg-white px-2.5 py-1 text-[11px] text-[#1E1B4B] outline-none focus:border-[#331E6D] disabled:opacity-60"
+                      />
+                    </label>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        )}
+              )}
+
+              <div className="space-y-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                  Steps to Replay ({activeSteps.length})
+                </div>
+                {activeSteps.map((s, idx) => {
+                  const st = stepStatuses[idx];
+                  return (
+                    <div
+                      key={`${s.selector}-${idx}`}
+                      className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-[10px] transition-all ${rowClass(
+                        st,
+                        activeStepIndex === idx
+                      )}`}
+                    >
+                      {statusIcon(st)}
+                      <span className="font-bold uppercase text-[#331E6D]">{s.action}</span>
+                      <span className="text-[#1E1B4B] truncate">
+                        {s.label || s.selector}
+                        {s.action === 'fill' && (stepOverrides[idx] ?? s.value) ? `: ${stepOverrides[idx] ?? s.value}` : ''}
+                      </span>
+                      {isHighStakesStep(s) && (
+                        <span className="ml-auto rounded bg-[#FEF3C7] px-1 text-[9px] font-bold text-[#B45309]">
+                          GATED
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {pendingConfirm && (
           <div className="rounded-xl border border-[#FCD34D] bg-[#FFFBEB] p-3 space-y-2">

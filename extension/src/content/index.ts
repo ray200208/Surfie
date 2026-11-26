@@ -88,22 +88,30 @@ function buildSelectorForElement(el: Element, fallbackIndex = 0): string {
   return `${el.tagName.toLowerCase()}:nth-of-type(${fallbackIndex + 1})`;
 }
 
+function cleanNotificationBadge(s: string): string {
+  return s
+    .replace(/,?\s*\d+\s+(new\s+)?notif(?:ication)?s?/gi, '')
+    .replace(/,?\s*\d+\s+unread(\s+messages?)?/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function resolveLabelText(el: Element): string {
   if (el.id) {
     const label = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
-    if (label?.textContent?.trim()) return label.textContent.trim();
+    if (label?.textContent?.trim()) return cleanNotificationBadge(label.textContent.trim());
   }
   const parentLabel = el.closest('label');
-  if (parentLabel?.textContent?.trim()) return parentLabel.textContent.trim();
+  if (parentLabel?.textContent?.trim()) return cleanNotificationBadge(parentLabel.textContent.trim());
 
   const aria = el.getAttribute('aria-label');
-  if (aria?.trim()) return aria.trim();
+  if (aria?.trim()) return cleanNotificationBadge(aria.trim());
 
   const placeholder = el.getAttribute('placeholder');
-  if (placeholder?.trim()) return placeholder.trim();
+  if (placeholder?.trim()) return cleanNotificationBadge(placeholder.trim());
 
   const text = el.textContent?.trim();
-  if (text) return text.slice(0, 60);
+  if (text) return cleanNotificationBadge(text.slice(0, 60));
 
   return el.getAttribute('name') || el.tagName.toLowerCase();
 }
@@ -318,10 +326,10 @@ function describeTarget(el: Element): StepTarget {
     type: el instanceof HTMLInputElement ? el.type : undefined,
     id: el.id || undefined,
     name: el.getAttribute('name') || undefined,
-    ariaLabel: el.getAttribute('aria-label') || undefined,
+    ariaLabel: el.getAttribute('aria-label') ? cleanNotificationBadge(el.getAttribute('aria-label')!) : undefined,
     placeholder: el.getAttribute('placeholder') || undefined,
     role: el.getAttribute('role') || undefined,
-    text: normText(el.textContent).slice(0, 80) || undefined,
+    text: cleanNotificationBadge(normText(el.textContent).slice(0, 80)) || undefined,
     href,
     xpath: xpathFor(el),
     parents,
@@ -462,9 +470,23 @@ function handleVideoEvent(event: Event): void {
   seekTimer = window.setTimeout(commitSeek, 600);
 }
 
+function handleRecordInput(event: Event): void {
+  if (!isRecording) return;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const editable = target.isContentEditable
+    ? target.closest('[contenteditable], [role="textbox"]') ?? target
+    : null;
+  if (!(editable instanceof HTMLElement)) return;
+  const val = (editable.innerText || editable.textContent || '').trim();
+  if (!val) return;
+  pushStep(buildStep('fill', editable, { value: val }));
+}
+
 function attachRecordListeners(): void {
   document.addEventListener('click', handleRecordClick, true);
   document.addEventListener('change', handleRecordChange, true);
+  document.addEventListener('input', handleRecordInput, true);
   document.addEventListener('keydown', handleKeydown, true);
   document.addEventListener('seeked', handleVideoEvent, true);
   document.addEventListener('pause', handleVideoEvent, true);
@@ -475,6 +497,7 @@ function attachRecordListeners(): void {
 function detachRecordListeners(): void {
   document.removeEventListener('click', handleRecordClick, true);
   document.removeEventListener('change', handleRecordChange, true);
+  document.removeEventListener('input', handleRecordInput, true);
   document.removeEventListener('keydown', handleKeydown, true);
   document.removeEventListener('seeked', handleVideoEvent, true);
   document.removeEventListener('pause', handleVideoEvent, true);
@@ -558,19 +581,21 @@ function resolveStepElement(step: WorkflowStep): Element | null {
   const ok = (el: Element | null): el is Element =>
     !!el && (!t || el.tagName.toLowerCase() === t.tag) && textCompatible(el, step);
 
-  try {
-    const el = document.querySelector(step.selector);
-    if (ok(el)) return el;
-  } catch {
-    /* invalid selector, fall through */
+  if (step.selector) {
+    try {
+      const el = document.querySelector(step.selector);
+      if (ok(el)) return el;
+    } catch {
+      /* invalid selector, fall through */
+    }
   }
   if (!t) return null;
 
-  if (t.id) {
+  if (step.selector && t.id) {
     const el = document.getElementById(t.id);
     if (ok(el)) return el;
   }
-  if (t.xpath) {
+  if (step.selector && t.xpath) {
     try {
       const n = document.evaluate(t.xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
       if (n instanceof Element && ok(n)) return n;
@@ -579,22 +604,56 @@ function resolveStepElement(step: WorkflowStep): Element | null {
     }
   }
 
-  const cands = Array.from(document.getElementsByTagName(t.tag)).filter((el) => ok(el));
-  const byAttr = cands.find((el) => {
-    if (t.name && el.getAttribute('name') === t.name) return true;
-    if (t.ariaLabel && el.getAttribute('aria-label') === t.ariaLabel) return true;
-    if (t.placeholder && el.getAttribute('placeholder') === t.placeholder) return true;
-    if (t.href && el instanceof HTMLAnchorElement) {
-      try {
-        const u = new URL(el.href);
-        return u.pathname + u.search === t.href;
-      } catch {
-        return false;
+  const cands =
+    t.tag && t.tag !== '*'
+      ? Array.from(document.getElementsByTagName(t.tag)).filter((el) => ok(el))
+      : [];
+  if (step.selector) {
+    const byAttr = cands.find((el) => {
+      if (t.name && el.getAttribute('name') === t.name) return true;
+      if (t.ariaLabel && el.getAttribute('aria-label') === t.ariaLabel) return true;
+      if (t.placeholder && el.getAttribute('placeholder') === t.placeholder) return true;
+      if (t.href && el instanceof HTMLAnchorElement) {
+        try {
+          const u = new URL(el.href);
+          return u.pathname + u.search === t.href;
+        } catch {
+          return false;
+        }
       }
+      return false;
+    });
+    if (byAttr) return byAttr;
+  }
+
+  const isTextboxStep =
+    step.action === 'fill' ||
+    t.role === 'textbox' ||
+    /write a message|type a message/i.test(`${step.label ?? ''} ${t.ariaLabel ?? ''}`);
+
+  if (isTextboxStep) {
+    const isRenderedFill = (el: Element) => {
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') === 0) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const editables = Array.from(
+      document.querySelectorAll('[contenteditable="true"], [role="textbox"], textarea, input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"])')
+    ).filter((el) => !el.closest('#pandapilot-shadow-root') && isRenderedFill(el));
+
+    const byAriaOrPh = editables.find((el) => {
+      if (t.ariaLabel && cleanNotificationBadge(el.getAttribute('aria-label') ?? '').toLowerCase() === t.ariaLabel.toLowerCase()) return true;
+      if (t.placeholder && (el.getAttribute('placeholder') ?? '').toLowerCase() === t.placeholder.toLowerCase()) return true;
+      return false;
+    });
+    if (byAriaOrPh) return byAriaOrPh;
+
+    if (t.role === 'textbox' || t.tag === 'div') {
+      const textbox = editables.find((el) => el.getAttribute('role') === 'textbox' || (el instanceof HTMLElement && el.isContentEditable));
+      if (textbox) return textbox;
     }
-    return false;
-  });
-  if (byAttr) return byAttr;
+  }
 
   const wantText = lc(t.text);
   if (wantText) {
@@ -612,6 +671,25 @@ function resolveStepElement(step: WorkflowStep): Element | null {
         return byLead.find((el) => isElementVisibleInViewport(el)) ?? byLead[0];
       }
     }
+    // Cross-tag fallback (handles overridden target text like "Madhu" / "xyz" or changed list DOM tags)
+    const isRendered = (el: Element) => {
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity || '1') === 0) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    const broad = Array.from(
+      document.querySelectorAll('a, button, li, [role="listitem"], [role="button"], [role="option"], h1, h2, h3, h4, h5, h6, span, p, div')
+    ).filter((el) => !el.closest('#pandapilot-shadow-root') && isRendered(el));
+    const exactBroad = broad
+      .filter((el) => lc(el.textContent) === wantText)
+      .sort((a, b) => a.querySelectorAll('*').length - b.querySelectorAll('*').length);
+    if (exactBroad.length) return exactBroad[0];
+    const needle = lead.length >= 3 ? lead : wantText;
+    const matchBroad = broad
+      .filter((el) => lc(el.textContent).includes(needle))
+      .sort((a, b) => (a.textContent?.length ?? 0) - (b.textContent?.length ?? 0));
+    if (matchBroad.length) return matchBroad[0];
   }
   return null;
 }
@@ -719,6 +797,45 @@ async function replayStep(step: WorkflowStep, confirmed = false): Promise<Replay
     setNativeValue(el, step.value ?? '');
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { ok: true, status: 'executed', matchedText };
+  }
+
+  if (step.action === 'fill' && el instanceof HTMLElement && (el.isContentEditable || el.getAttribute('role') === 'textbox')) {
+    const val = step.value ?? '';
+    el.scrollIntoView({ behavior: 'auto', block: 'center' });
+    el.click();
+    el.focus();
+
+    // Place selection explicitly inside the editor (or its inner <p>) so execCommand/paste works on LinkedIn/DraftJS/ProseMirror.
+    const sel = window.getSelection();
+    if (sel) {
+      const range = document.createRange();
+      const innerP = el.querySelector('p');
+      range.selectNodeContents(innerP ?? el);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: val }));
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, val);
+    } catch {
+      inserted = false;
+    }
+
+    if (!inserted || !(el.innerText || '').includes(val)) {
+      const innerP = el.querySelector('p');
+      if (innerP) {
+        innerP.textContent = val;
+      } else {
+        el.innerHTML = `<p>${val.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`;
+      }
+    }
+
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: val }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: val.slice(-1) || ' ' }));
     return { ok: true, status: 'executed', matchedText };
   }
 
