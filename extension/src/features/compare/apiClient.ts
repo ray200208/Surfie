@@ -100,7 +100,7 @@ export async function requestClarify(
   baseUrl: string
 ): Promise<ClarifyPlanResult> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 20000);
+  const timer = window.setTimeout(() => controller.abort(), 60000);
   try {
     const res = await fetch(`${baseUrl}/api/compare/clarify`, {
       method: 'POST',
@@ -149,7 +149,7 @@ export async function requestClarify(
   } catch (err) {
     const reason =
       err instanceof Error && err.name === 'AbortError'
-        ? 'Gemini clarify timed out after 20s — using local fallback.'
+        ? 'Gemini clarify timed out after 60s — using local fallback.'
         : err instanceof Error
           ? `Backend fallback: ${err.message}`
           : 'Backend unreachable — using local fallback.';
@@ -176,7 +176,7 @@ export async function requestAnalyze(
   baseUrl: string
 ): Promise<AnalyzeResult> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 30000);
+  const timer = window.setTimeout(() => controller.abort(), 60000);
   try {
     const payload = {
       prompt,
@@ -301,7 +301,13 @@ export async function requestAnalyze(
         savingsSummary: raw.recommendation.savings_summary,
       },
     };
-  } catch {
+  } catch (err) {
+    const fallbackReason =
+      err instanceof Error && err.name === 'AbortError'
+        ? 'Gemini analysis timed out after 60s — using local fallback.'
+        : err instanceof Error
+          ? `Backend fallback: ${err.message}`
+          : 'Backend unreachable — using local fallback.';
     const local = buildLocalOptionsFromExtractions(extractions, category, answers);
     return {
       normalizedGoal: prompt,
@@ -309,6 +315,7 @@ export async function requestAnalyze(
       recommendation: local.recommendation,
       poweredBy: 'Local Deterministic Engine',
       executionLayer: extractions.some((e) => e.jsonLdSummary) ? 'LAYER_A_STRUCTURED' : 'LAYER_C_DOM',
+      fallbackReason,
     };
   } finally {
     window.clearTimeout(timer);

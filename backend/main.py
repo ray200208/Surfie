@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -72,10 +73,18 @@ def clarify_compare(req: ClarifyRequest) -> ClarifyResponse:
             status_code=503,
             detail="GEMINI_API_KEY not configured on backend; client fallback active.",
         )
+    started = time.perf_counter()
     try:
-        return gemini_service.generate_clarify_plan(req)
+        res = gemini_service.generate_clarify_plan(req)
+        elapsed = time.perf_counter() - started
+        print(
+            f"[PandaPilot] /api/compare/clarify ok in {elapsed:.2f}s (model={gemini_service.FAST_MODEL})",
+            flush=True,
+        )
+        return res
     except Exception as exc:
-        print(f"[PandaPilot] /api/compare/clarify failed: {exc}", flush=True)
+        elapsed = time.perf_counter() - started
+        print(f"[PandaPilot] /api/compare/clarify failed in {elapsed:.2f}s: {exc}", flush=True)
         raise HTTPException(status_code=502, detail=f"Gemini clarify error: {exc}") from exc
 
 
@@ -86,10 +95,17 @@ def analyze_compare(req: AnalyzeRequest) -> AnalyzeResponse:
             status_code=503,
             detail="GEMINI_API_KEY not configured on backend; client fallback active.",
         )
+    started = time.perf_counter()
     try:
         normalized_goal, extracted_list = gemini_service.extract_options_from_tabs(req)
+        elapsed = time.perf_counter() - started
+        print(
+            f"[PandaPilot] /api/compare/analyze ok in {elapsed:.2f}s (model={gemini_service.FAST_MODEL})",
+            flush=True,
+        )
     except Exception as exc:
-        print(f"[PandaPilot] /api/compare/analyze failed: {exc}", flush=True)
+        elapsed = time.perf_counter() - started
+        print(f"[PandaPilot] /api/compare/analyze failed in {elapsed:.2f}s: {exc}", flush=True)
         raise HTTPException(status_code=502, detail=f"Gemini extraction error: {exc}") from exc
 
     extracted_by_idx = {item.get("tab_index", idx): item for idx, item in enumerate(extracted_list)}

@@ -18,8 +18,8 @@ from schemas import (
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
-FAST_MODEL = os.getenv("GEMINI_FAST_MODEL", "gemini-2.5-flash")
-PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
+FAST_MODEL = os.getenv("GEMINI_FAST_MODEL", "gemini-3.8-flash")
+PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-3.1-pro-preview")
 
 
 def get_key_mode() -> str:
@@ -37,14 +37,23 @@ def is_gemini_configured() -> bool:
 
 def _get_client(force_vertex: bool = False):
     from google import genai
+    from google.genai import types
 
     api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     mode = get_key_mode()
     if mode == "none":
         raise RuntimeError("GEMINI_API_KEY is not configured in backend/.env")
+    http_options = types.HttpOptions(
+        timeout=55_000,
+        retry_options=types.HttpRetryOptions(
+            attempts=2,
+            initial_delay=1.0,
+            max_delay=4.0,
+        ),
+    )
     if force_vertex or mode == "vertex_express":
-        return genai.Client(vertexai=True, api_key=api_key)
-    return genai.Client(api_key=api_key)
+        return genai.Client(vertexai=True, api_key=api_key, http_options=http_options)
+    return genai.Client(api_key=api_key, http_options=http_options)
 
 
 def _generate_json(model: str, contents: str, config) -> str:
@@ -63,6 +72,17 @@ def _generate_json(model: str, contents: str, config) -> str:
             )
             return response.text
         raise
+
+
+def _thinking_config(model: str):
+    """Select thinking configuration compatible with the target Gemini model generation."""
+    from google.genai import types
+
+    if "gemini-2.5" in model:
+        return types.ThinkingConfig(thinking_budget=0)
+    if "flash-lite" in model:
+        return types.ThinkingConfig(thinking_level=types.ThinkingLevel.MINIMAL)
+    return types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)
 
 
 class _SpecItem(BaseModel):
@@ -124,7 +144,7 @@ def generate_clarify_plan(req: ClarifyRequest) -> ClarifyResponse:
             response_mime_type="application/json",
             response_schema=ClarifyResponse,
             temperature=0.2,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            thinking_config=_thinking_config(FAST_MODEL),
         ),
     )
 
@@ -179,7 +199,7 @@ def extract_options_from_tabs(req: AnalyzeRequest) -> tuple[str, list[dict]]:
             response_mime_type="application/json",
             response_schema=_GeminiExtractionBatch,
             temperature=0.1,
-            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            thinking_config=_thinking_config(FAST_MODEL),
         ),
     )
 

@@ -183,3 +183,33 @@ def test_key_mode_detection(monkeypatch):
 
     monkeypatch.setenv("GEMINI_API_KEY", "")
     assert gemini_service.get_key_mode() == "none"
+
+
+def test_thinking_config_for_model_generations():
+    from google.genai import types
+
+    import gemini_service
+
+    cfg_3 = gemini_service._thinking_config("gemini-3.8-flash")
+    assert cfg_3.thinking_level == types.ThinkingLevel.LOW
+    assert cfg_3.thinking_budget is None
+
+    cfg_lite = gemini_service._thinking_config("gemini-3.1-flash-lite")
+    assert cfg_lite.thinking_level == types.ThinkingLevel.MINIMAL
+    assert cfg_lite.thinking_budget is None
+
+    cfg_25 = gemini_service._thinking_config("gemini-2.5-flash")
+    assert cfg_25.thinking_budget == 0
+    assert cfg_25.thinking_level is None
+
+
+def test_client_http_options(monkeypatch):
+    import gemini_service
+
+    monkeypatch.setenv("GEMINI_API_KEY", "AQ.Ab8RN6ExampleAIStudioKey1234567890")
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    client = gemini_service._get_client()
+    opts = client._api_client._http_options
+    assert opts.timeout == 55_000
+    assert opts.retry_options is not None
+    assert opts.retry_options.attempts == 2
