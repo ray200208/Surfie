@@ -170,10 +170,14 @@ def test_fastapi_endpoints_with_mocked_gemini(monkeypatch):
 def test_key_mode_detection(monkeypatch):
     import gemini_service
 
-    monkeypatch.setenv("GEMINI_API_KEY", "AQ.Ab8RN6ExampleVertexKey1234567890")
+    monkeypatch.setenv("GEMINI_API_KEY", "AQ.Ab8RN6ExampleAIStudioKey1234567890")
     monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    assert gemini_service.get_key_mode() == "ai_studio"
+
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
     assert gemini_service.get_key_mode() == "vertex_express"
 
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
     monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyExampleAIStudioKey1234567890")
     assert gemini_service.get_key_mode() == "ai_studio"
 
