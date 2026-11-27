@@ -59,6 +59,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "geminiConfigured": gemini_service.is_gemini_configured(),
+        "keyMode": gemini_service.get_key_mode(),
         "fastModel": gemini_service.FAST_MODEL,
         "proModel": gemini_service.PRO_MODEL,
     }
@@ -74,6 +75,7 @@ def clarify_compare(req: ClarifyRequest) -> ClarifyResponse:
     try:
         return gemini_service.generate_clarify_plan(req)
     except Exception as exc:
+        print(f"[PandaPilot] /api/compare/clarify failed: {exc}", flush=True)
         raise HTTPException(status_code=502, detail=f"Gemini clarify error: {exc}") from exc
 
 
@@ -87,6 +89,7 @@ def analyze_compare(req: AnalyzeRequest) -> AnalyzeResponse:
     try:
         normalized_goal, extracted_list = gemini_service.extract_options_from_tabs(req)
     except Exception as exc:
+        print(f"[PandaPilot] /api/compare/analyze failed: {exc}", flush=True)
         raise HTTPException(status_code=502, detail=f"Gemini extraction error: {exc}") from exc
 
     extracted_by_idx = {item.get("tab_index", idx): item for idx, item in enumerate(extracted_list)}

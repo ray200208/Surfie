@@ -139,6 +139,7 @@ def test_fastapi_endpoints_with_mocked_gemini(monkeypatch):
     health_res = client.get("/health")
     assert health_res.status_code == 200
     assert health_res.json()["geminiConfigured"] is True
+    assert "keyMode" in health_res.json()
 
     clarify_res = client.post("/api/compare/clarify", json={"prompt": "Best ANC headphones"})
     assert clarify_res.status_code == 200
@@ -164,3 +165,17 @@ def test_fastapi_endpoints_with_mocked_gemini(monkeypatch):
     body = analyze_res.json()
     assert body["options"][0]["total_cost"] == 10989
     assert body["recommendation"]["winner_id"] == "opt-1"
+
+
+def test_key_mode_detection(monkeypatch):
+    import gemini_service
+
+    monkeypatch.setenv("GEMINI_API_KEY", "AQ.Ab8RN6ExampleVertexKey1234567890")
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    assert gemini_service.get_key_mode() == "vertex_express"
+
+    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyExampleAIStudioKey1234567890")
+    assert gemini_service.get_key_mode() == "ai_studio"
+
+    monkeypatch.setenv("GEMINI_API_KEY", "")
+    assert gemini_service.get_key_mode() == "none"

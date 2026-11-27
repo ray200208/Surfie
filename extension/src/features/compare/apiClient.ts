@@ -91,6 +91,7 @@ export interface ClarifyPlanResult {
   questions: ClarifyingQuestion[];
   suggestedSites: SiteCandidate[];
   poweredBy: string;
+  fallbackReason?: string;
 }
 
 export async function requestClarify(
@@ -99,7 +100,7 @@ export async function requestClarify(
   baseUrl: string
 ): Promise<ClarifyPlanResult> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 8000);
+  const timer = window.setTimeout(() => controller.abort(), 20000);
   try {
     const res = await fetch(`${baseUrl}/api/compare/clarify`, {
       method: 'POST',
@@ -108,7 +109,14 @@ export async function requestClarify(
       signal: controller.signal,
     });
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+      let detail = `HTTP ${res.status}`;
+      try {
+        const errBody = (await res.json()) as { detail?: string };
+        if (errBody?.detail) detail = errBody.detail;
+      } catch {
+        // ignore JSON parse failure
+      }
+      throw new Error(detail);
     }
     const raw = (await res.json()) as {
       category: CompareCategory;
@@ -138,8 +146,14 @@ export async function requestClarify(
       })),
       poweredBy: raw.powered_by || 'FastAPI + Gemini Flash',
     };
-  } catch {
-    return buildLocalClarifyPlan(prompt);
+  } catch (err) {
+    const reason =
+      err instanceof Error && err.name === 'AbortError'
+        ? 'Gemini clarify timed out after 20s — using local fallback.'
+        : err instanceof Error
+          ? `Backend fallback: ${err.message}`
+          : 'Backend unreachable — using local fallback.';
+    return { ...buildLocalClarifyPlan(prompt), fallbackReason: reason };
   } finally {
     window.clearTimeout(timer);
   }
@@ -151,6 +165,7 @@ export interface AnalyzeResult {
   recommendation: RecommendedDecision;
   poweredBy: string;
   executionLayer: 'LAYER_A_STRUCTURED' | 'LAYER_C_DOM';
+  fallbackReason?: string;
 }
 
 export async function requestAnalyze(
@@ -161,7 +176,7 @@ export async function requestAnalyze(
   baseUrl: string
 ): Promise<AnalyzeResult> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 14000);
+  const timer = window.setTimeout(() => controller.abort(), 30000);
   try {
     const payload = {
       prompt,
@@ -188,7 +203,14 @@ export async function requestAnalyze(
       signal: controller.signal,
     });
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+      let detail = `HTTP ${res.status}`;
+      try {
+        const errBody = (await res.json()) as { detail?: string };
+        if (errBody?.detail) detail = errBody.detail;
+      } catch {
+        // ignore JSON parse failure
+      }
+      throw new Error(detail);
     }
 
     const raw = (await res.json()) as {

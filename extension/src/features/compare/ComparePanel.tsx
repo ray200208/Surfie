@@ -94,6 +94,7 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({ onLayerChange }) => 
   const [session, setSession] = useState<CompareSessionState | null>(null);
   const [firewallDrawerOpen, setFirewallDrawerOpen] = useState(false);
   const [anchorNote, setAnchorNote] = useState<string | null>(null);
+  const [fallbackNotice, setFallbackNotice] = useState<string | null>(null);
 
   const refreshHealth = useCallback(async (urlToTest: string) => {
     const res = await checkBackendHealth(urlToTest);
@@ -164,12 +165,16 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({ onLayerChange }) => 
     if (!cleaned) return;
     setBusyMessage('Planning clarifying questions & candidate sites...');
     setAnchorNote(null);
+    setFallbackNotice(null);
 
     const plan = await requestClarify(
       cleaned,
       openTabs.map((t) => t.title),
       backendUrl
     );
+    if (plan.fallbackReason) {
+      setFallbackNotice(plan.fallbackReason);
+    }
     setCategory(plan.category);
     setNormalizedGoal(plan.normalizedGoal);
     setQuestions(plan.questions);
@@ -233,6 +238,11 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({ onLayerChange }) => 
       extractions,
       backendUrl
     );
+    if (analyzed.fallbackReason) {
+      setFallbackNotice(analyzed.fallbackReason);
+    } else {
+      setFallbackNotice(null);
+    }
     const quarantinedInjections = extractions.flatMap((ext) => ext.quarantinedInjections);
 
     const nextSession: CompareSessionState = {
@@ -371,8 +381,10 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({ onLayerChange }) => 
             <button
               type="button"
               onClick={() => {
+                if (entryMode === 'ask' && flowStep === 'whiteboard') {
+                  setFlowStep('input');
+                }
                 setEntryMode('ask');
-                if (flowStep === 'whiteboard' && !session) setFlowStep('input');
               }}
               className={`rounded-lg px-2.5 py-1 transition-all cursor-pointer ${
                 entryMode === 'ask'
@@ -472,6 +484,19 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({ onLayerChange }) => 
           ))}
         </div>
       </div>
+
+      {fallbackNotice && (
+        <div className="flex items-start justify-between gap-2 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-3 py-2 text-[11px] font-medium text-[#92400E]">
+          <span className="break-words">{fallbackNotice}</span>
+          <button
+            type="button"
+            onClick={() => setFallbackNotice(null)}
+            className="shrink-0 text-[#92400E] hover:text-[#78350F] cursor-pointer"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* ENTRY MODE: OPEN TABS PICKER */}
       {entryMode === 'tabs' && (
@@ -587,6 +612,16 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({ onLayerChange }) => 
               </>
             )}
           </button>
+
+          {session && (
+            <button
+              type="button"
+              onClick={() => setFlowStep('whiteboard')}
+              className="w-full text-center text-[11px] font-semibold text-[#331E6D] hover:underline cursor-pointer"
+            >
+              Resume Last Whiteboard ({session.normalizedGoal}) →
+            </button>
+          )}
         </form>
       )}
 

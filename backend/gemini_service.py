@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
@@ -15,7 +14,6 @@ from schemas import (
     BillingCycle,
     ClarifyRequest,
     ClarifyResponse,
-    CompareCategory,
 )
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -24,18 +22,34 @@ FAST_MODEL = os.getenv("GEMINI_FAST_MODEL", "gemini-2.5-flash")
 PRO_MODEL = os.getenv("GEMINI_PRO_MODEL", "gemini-2.5-pro")
 
 
-def is_gemini_configured() -> bool:
+def get_key_mode() -> str:
     key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    return bool(key) and key != "your_gemini_api_key_here"
+    if not key or key == "your_gemini_api_key_here":
+        return "none"
+    if key.startswith("AQ.") or (os.getenv("GOOGLE_GENAI_USE_VERTEXAI") or "").lower() == "true":
+        return "vertex_express"
+    return "ai_studio"
+
+
+def is_gemini_configured() -> bool:
+    return get_key_mode() != "none"
 
 
 def _get_client():
     from google import genai
 
     api_key = (os.getenv("GEMINI_API_KEY") or "").strip()
-    if not api_key or api_key == "your_gemini_api_key_here":
+    mode = get_key_mode()
+    if mode == "none":
         raise RuntimeError("GEMINI_API_KEY is not configured in backend/.env")
+    if mode == "vertex_express":
+        return genai.Client(vertexai=True, api_key=api_key)
     return genai.Client(api_key=api_key)
+
+
+class _SpecItem(BaseModel):
+    key: str
+    value: str | None = None
 
 
 class _GeminiExtractedOption(BaseModel):
@@ -51,7 +65,7 @@ class _GeminiExtractedOption(BaseModel):
     addon_pre_ticked: bool = False
     late_or_shipping_fee: float = 0.0
     tax_percent: float = 0.0
-    specs: dict[str, str | None] = Field(default_factory=dict)
+    specs: list[_SpecItem] = Field(default_factory=list)
     rating: str | None = None
     contract_or_policy: str | None = None
     pros: list[str] = Field(default_factory=list)
@@ -64,7 +78,7 @@ class _GeminiExtractionBatch(BaseModel):
 
 
 def generate_clarify_plan(req: ClarifyRequest) -> ClarifyResponse:
-    """Use Gemini Flash to classify the prompt, ask 2-3 clarifying questions, and pick 5 candidate sites."""
+    """Use Gemini Flash to classify the prompt, ask 3 prompt-specific questions, and pick 5 candidate sites."""
     from google.genai import types
 
     client = _get_client()
@@ -73,9 +87,10 @@ def generate_clarify_plan(req: ClarifyRequest) -> ClarifyResponse:
         "products, services/subscriptions, or travel plans:\n"
         "1) Classify category as 'product', 'service', 'travel', or 'general'.\n"
         "2) Write a concise normalized_goal (max 10 words).\n"
-        "3) Produce 3 crisp clarifying questions (e.g., budget cap, top priority, duration/usage) "
-        "with id ('budget', 'priority', 'context') and 3-4 short quick-pick chips each.\n"
-        "4) Propose 5 reputable public websites or search URLs relevant to the user's prompt "
+        "3) Produce 3 prompt-specific, high-signal clarifying questions tailored directly to the user's exact request "
+        "(e.g., specific specs, brand/region constraints, dates/routes, seat/baggage needs, or must-have features — "
+        "avoid generic boilerplate). Use id values 'budget', 'priority', 'context', with 3-4 short clickable chips each.\n"
+        "4) Propose 5 reputable public websites or real direct search URLs relevant to the user's prompt "
         "(prefer Indian/global mainstream stores, ISP/service pricing pages, or travel aggregators). "
         "Set default_selected=true ONLY on the top 3 sites and false on the remaining 2."
     )
@@ -92,6 +107,7 @@ def generate_clarify_plan(req: ClarifyRequest) -> ClarifyResponse:
             response_mime_type="application/json",
             response_schema=ClarifyResponse,
             temperature=0.2,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
 
@@ -116,7 +132,7 @@ def extract_options_from_tabs(req: AnalyzeRequest) -> tuple[str, list[dict]]:
         "billing_cycle ('one_time', 'monthly', 'quarterly', 'annual'), setup_fee, addon_label, addon_cost, "
         "addon_recurring, addon_pre_ticked, late_or_shipping_fee, tax_percent.\n"
         "- NEVER invent missing prices, ratings, or policies. Return null if not explicitly stated.\n"
-        "- Provide 2-4 concise spec key-values, 2 pros, and 1-2 cons."
+        "- Provide 2-4 concise spec key-value pairs in specs, 2 pros, and 1-2 cons."
     )
 
     sanitized_tabs = [
@@ -147,8 +163,14 @@ def extract_options_from_tabs(req: AnalyzeRequest) -> tuple[str, list[dict]]:
             response_mime_type="application/json",
             response_schema=_GeminiExtractionBatch,
             temperature=0.1,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         ),
     )
 
     batch = _GeminiExtractionBatch.model_validate_json(response.text)
-    return batch.normalized_goal, [opt.model_dump() for opt in batch.options]
+    converted: list[dict] = []
+    for opt in batch.options:
+        d = opt.model_dump()
+        d["specs"] = {item.key: item.value for item in opt.specs if item.key}
+        converted.append(d)
+    return batch.normalized_goal, converted
