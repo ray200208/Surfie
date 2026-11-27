@@ -8,3 +8,10 @@ dist
 Docs/PandaPilot_Prototype_Prompt.md
 
 .vercel
+
+# Python / FastAPI backend
+.venv/
+backend/.venv/
+__pycache__/
+*.pyc
+backend/.env
